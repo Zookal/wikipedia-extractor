@@ -799,7 +799,7 @@ class Extractor(object):
         # part-value      = wikitext-L3
         # wikitext-L3     = literal / template / tplarg / link / comment /
         #                   line-eating-comment / unclosed-comment /
-        #           	    xmlish-element / *wikitext-L3
+        #                   xmlish-element / *wikitext-L3
 
         # A tplarg may contain other parameters as well as templates, e.g.:
         #   {{{text|{{{quote|{{{1|{{error|Error: No text given}}}}}}}}}}}
@@ -1832,7 +1832,7 @@ def replaceInternalLinks(text):
 #                 if '%' in m.group(1):
 #                     m.group(1) = rawurldecode(m.group(1))
 #                 trail = ""
-#             else:		# Invalid form; output directly
+#             else:     # Invalid form; output directly
 #                 s += prefix + '[[' + line
 #                 continue
 
@@ -1865,7 +1865,7 @@ def replaceInternalLinks(text):
 #         ns = nt.getNamespace()
 #         iw = nt.getInterwiki()
 
-#         if might_be_img {	# if this is actually an invalid link
+#         if might_be_img { # if this is actually an invalid link
 #             if (ns == NS_FILE and noforce) { # but might be an image
 #                 found = False
 #                 while True:
@@ -2413,12 +2413,12 @@ def pages_from(input):
             page = []
 
 
-def process_dump(input_file, template_file, out_file, file_size, file_compress,
+def process_dump(input_file, template_file, output_path, individual_article_output, file_size, file_compress,
                  process_count):
     """
     :param input_file: name of the wikipedia dump file; '-' to read from stdin
     :param template_file: optional file with template definitions.
-    :param out_file: directory where to store extracted data, or '-' for stdout
+    :param output_path: directory where to store extracted data, or '-' for stdout
     :param file_size: max size of each extracted file, or None for no max (one file)
     :param file_compress: whether to compress files with bzip.
     :param process_count: number of extraction processes to spawn.
@@ -2488,8 +2488,8 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     # output queue
     output_queue = Queue(maxsize=maxsize)
 
-    if out_file == '-':
-        out_file = None
+    if output_path == '-':
+        output_path = None
 
     worker_count = max(1, process_count)
 
@@ -2500,7 +2500,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     # reduce job that sorts and prints output
     reduce = Process(target=reduce_process,
                      args=(output_queue, spool_length,
-                           out_file, file_size, file_compress))
+                           output_path, individual_article_output, file_size, file_compress))
     reduce.start()
 
     # initialize jobs queue
@@ -2570,6 +2570,9 @@ def extract_process(i, jobs_queue, output_queue):
         job = jobs_queue.get()  # job is (id, title, page, page_num)
         if job:
             id, title, page, page_num = job
+            # hack - to output each article in a separate file with name - page_id.html
+            page_num = id
+
             try:
                 e = Extractor(*job[:3]) # (id, title, page)
                 page = None              # free memory
@@ -2578,6 +2581,7 @@ def extract_process(i, jobs_queue, output_queue):
             except:
                 text = ''
                 logging.error('Processing page: %s %s', id, title)
+
             output_queue.put((page_num, text))
             out.truncate(0)
         else:
@@ -2586,19 +2590,38 @@ def extract_process(i, jobs_queue, output_queue):
     out.close()
 
 
-report_period = 10000           # progress report period
+def get_output_file_path(output_path, page_id):
+    """
+    :param output_path: absolute path of the output
+    :param page_id: id of the wikipedia article/page
+    :return: output_file_path: absolute path of the output file with appropriate hierarchy
+    """
+    page_id_formatted = str(page_id).zfill(10)
+    first_level_dir = str(int(page_id_formatted[:4]))
+    second_level_dir = page_id_formatted[4:5]
+    third_level_dir = page_id_formatted[5:6]
+    fourth_level_dir = page_id_formatted[6:7]
+    output_dir = os.path.join(output_path, first_level_dir, second_level_dir, third_level_dir, fourth_level_dir)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    output_file_path = os.path.join(output_dir, '{page_id}.html'.format(page_id=page_id))
+
+    return output_file_path
+
+
+report_period = 1000           # progress report period
 def reduce_process(output_queue, spool_length,
-                   out_file=None, file_size=0, file_compress=True):
+                   output_path=None, individual_article_output=False, file_size=0, file_compress=True):
     """Pull finished article text, write series of files (or stdout)
     :param output_queue: text to be output.
     :param spool_length: spool length.
-    :param out_file: filename where to print.
+    :param output_path: filename where to print.
     :param file_size: max file size.
     :param file_compress: whether to compress output.
     """
 
-    if out_file:
-        nextFile = NextFile(out_file)
+    if output_path and not individual_article_output:
+        nextFile = NextFile(output_path)
         output = OutputSplitter(nextFile, file_size, file_compress)
     else:
         output = sys.stdout
@@ -2609,18 +2632,28 @@ def reduce_process(output_queue, spool_length,
     # FIXME: use a heap
     spool = {}        # collected pages
     next_page = 0     # sequence numbering of page
+    processed_page_counter = 0
     while True:
+
         if next_page in spool:
+            processed_page_counter += 1
+            if individual_article_output:
+                output_file_path = get_output_file_path(output_path, next_page)
+                output = open(output_file_path, 'w')
+
             output.write(spool.pop(next_page))
-            next_page += 1
+            # next_page += 1
             # tell mapper our load:
             spool_length.value = len(spool)
             # progress report
-            if next_page % report_period == 0:
+            if processed_page_counter % report_period == 0:
                 interval_rate = report_period / (default_timer() - interval_start)
                 logging.info("Extracted %d articles (%.1f art/s)",
-                             next_page, interval_rate)
+                             int(next_page), interval_rate)
                 interval_start = default_timer()
+
+            if individual_article_output:
+                output.close()
         else:
             # mapper puts None to signal finish
             pair = output_queue.get()
@@ -2628,6 +2661,7 @@ def reduce_process(output_queue, spool_length,
                 break
             page_num, text = pair
             spool[page_num] = text
+            next_page = page_num
             # tell mapper our load:
             spool_length.value = len(spool)
             # FIXME: if an extractor dies, process stalls; the other processes
@@ -2662,6 +2696,8 @@ def main():
                         metavar="n[KMG]")
     groupO.add_argument("-c", "--compress", action="store_true",
                         help="compress output files using bzip")
+    groupO.add_argument("-i", "--individual_article_output", action="store_true",
+                        help="output each article in its own file with article_id as filename... compress and bytes are discarded if this flag is set to True")
 
     groupP = parser.add_argument_group('Processing')
     groupP.add_argument("--html", action="store_true",
@@ -2751,6 +2787,7 @@ def main():
         return
 
     output_path = args.output
+    individual_article_output = args.individual_article_output
     if output_path != '-' and not os.path.isdir(output_path):
         try:
             os.makedirs(output_path)
@@ -2758,7 +2795,7 @@ def main():
             logging.error('Could not create: %s', output_path)
             return
 
-    process_dump(input_file, args.templates, output_path, file_size,
+    process_dump(input_file, args.templates, output_path, individual_article_output, file_size,
                  args.compress, args.processes)
 
 
