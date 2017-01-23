@@ -412,7 +412,7 @@ class Extractor(object):
 
     ##
     # Whether to preserve lists
-    keeplists = False
+    keepLists = False
 
     ##
     # Whether to output HTML instead of text
@@ -2133,7 +2133,7 @@ def compact(text):
 
     for line in text.split('\n'):
 
-        if not line:
+        if not line and len(listLevel) == 0:
             continue
         # Handle section titles
         m = section.match(line)
@@ -2160,18 +2160,18 @@ def compact(text):
                     title += '.'
                 page.append(title)
         # handle indents
-        elif line[0] == ':':
+        elif line and line[0] == ':':
             # page.append(line.lstrip(':*#;'))
             continue
         # handle lists
-        elif line[0] in '*#;:':
+        elif line and line[0] in '*#;:':
             i = 0
             # c: current level char
             # n: next level char
             for c, n in izip_longest(listLevel, line, fillvalue=''):
                 if not n or n not in '*#;:': # shorter or different
                     if c:
-                        if Extractor.toHTML:
+                        if Extractor.toHTML and Extractor.keepLists:
                             page.append(listClose[c])
                         listLevel = listLevel[:-1]
                         continue
@@ -2181,17 +2181,17 @@ def compact(text):
                 if c != n and (not c or (c not in ';:' and n not in ';:')):
                     if c:
                         # close level
-                        if Extractor.toHTML:
+                        if Extractor.toHTML and Extractor.keepLists:
                             page.append(listClose[c])
                         listLevel = listLevel[:-1]
                     listLevel += n
-                    if Extractor.toHTML:
+                    if Extractor.toHTML and Extractor.keepLists:
                         page.append(listOpen[n])
                 i += 1
             n = line[i - 1]  # last list char
             line = line[i:].strip()
             if line:  # FIXME: n is '"'
-                if Extractor.keepLists:
+                if Extractor.toHTML is False and  Extractor.keepLists:
                     # emit open sections
                     items = headers.items()
                     items.sort()
@@ -2201,11 +2201,12 @@ def compact(text):
                     # FIXME: use item count for #-lines
                     bullet = '1. ' if n == '#' else '- '
                     page.append('{0:{1}s}'.format(bullet, len(listLevel)) + line)
-                elif Extractor.toHTML:
+                elif Extractor.toHTML and Extractor.keepLists:
+                    # If keepList is False, dont include in HTML as well
                     page.append(listItem[n] % line)
         elif len(listLevel):
             page.append(line)
-            if Extractor.toHTML:
+            if Extractor.toHTML and Extractor.keepLists:
                 for c in reversed(listLevel):
                     page.append(listClose[c])
             listLevel = []
@@ -2717,7 +2718,7 @@ def main():
                         help="preserve links")
     groupP.add_argument("-s", "--sections", action="store_true",
                         help="preserve sections")
-    groupP.add_argument("--lists", action="store_true",
+    groupP.add_argument("--lists", action="store_true", default=False,
                         help="preserve lists")
     groupP.add_argument("-nsl", "--namespaces_links", default="", metavar="ns1,ns2",
                         help="accepted namespaces for internal/external links")
@@ -2748,9 +2749,10 @@ def main():
     Extractor.keepLinks = args.links
     Extractor.keepSections = args.sections
     Extractor.keepLists = args.lists
+
     Extractor.toHTML = args.html
-    if args.html:
-        Extractor.keepLinks = True
+    # if args.html:
+    #     Extractor.keepLinks = True
 
     Extractor.expand_templates = args.no_templates
     escape_doc = args.escapedoc
