@@ -96,7 +96,11 @@ moduleNamespace = ''
 # wiktionary: Wiki dictionary
 # wikt: shortcut for Wiktionary
 #
-acceptedNamespaces = ['w', 'wiktionary', 'wikt']
+accepted_namespaces_for_links = ['w', 'wiktionary', 'wikt']
+
+# Include the documents with the namespace in accepted_namespaces
+# Example: if 0 is in accepted_namespaces then all docs with <ns>0</ns> will be selected for output
+accepted_namespaces = []
 
 ##
 # Drop these elements from article text
@@ -2003,12 +2007,12 @@ def replaceInternalLinks(text):
 
 def makeInternalLink(title, label):
     colon = title.find(':')
-    if colon > 0 and title[:colon] not in acceptedNamespaces:
+    if colon > 0 and title[:colon] not in accepted_namespaces_for_links:
         return ''
     if colon == 0:
         # drop also :File:
         colon2 = title.find(':', colon + 1)
-        if colon2 > 1 and title[colon + 1:colon2] not in acceptedNamespaces:
+        if colon2 > 1 and title[colon + 1:colon2] not in accepted_namespaces_for_links:
             return ''
     if Extractor.keepLinks:
         return '<a href="%s">%s</a>' % (urllib.quote(title.encode('utf-8')), label)
@@ -2325,6 +2329,7 @@ def load_templates(file, output_file=None):
         output = codecs.open(output_file, 'wb', 'utf-8')
     for page_count, page_data in enumerate(pages_from(file)):
         id, title, ns, page = page_data
+
         if not output_file and (not templateNamespace or
                                 not moduleNamespace):  # do not know it yet
             # reconstruct templateNamespace and moduleNamespace from the first title
@@ -2424,6 +2429,7 @@ def process_dump(input_file, template_file, output_path, individual_article_outp
     :param process_count: number of extraction processes to spawn.
     """
     global urlbase
+    global accepted_namespaces
     global knownNamespaces
     global templateNamespace, templatePrefix
     global moduleNamespace, modulePrefix
@@ -2520,6 +2526,11 @@ def process_dump(input_file, template_file, output_path, individual_article_outp
     page_num = 0
     for page_data in pages_from(input):
         id, title, ns, page = page_data
+        # Ignore the page if the namespace is not included in Accepted Namespace
+        if int(ns) not in accepted_namespaces:
+            page_num += 1
+            continue
+
         if ns not in templateKeys:
             # slow down
             delay = 0
@@ -2680,7 +2691,7 @@ minFileSize = 200 * 1024
 
 
 def main():
-    global urlbase, acceptedNamespaces
+    global urlbase, accepted_namespaces, accepted_namespaces_for_links
     global templateCache, escape_doc
 
     parser = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]),
@@ -2708,8 +2719,9 @@ def main():
                         help="preserve sections")
     groupP.add_argument("--lists", action="store_true",
                         help="preserve lists")
-    groupP.add_argument("-ns", "--namespaces", default="", metavar="ns1,ns2",
-                        help="accepted namespaces")
+    groupP.add_argument("-nsl", "--namespaces_links", default="", metavar="ns1,ns2",
+                        help="accepted namespaces for internal/external links")
+    groupP.add_argument("-ns", "--namespaces", type=int, default=[], action="append", help="accepted namespaces")
     groupP.add_argument("--templates",
                         help="use or create file containing templates")
     groupP.add_argument("--no-templates", action="store_false",
@@ -2753,7 +2765,10 @@ def main():
         return
 
     if args.namespaces:
-        acceptedNamespaces = set(args.namespaces.split(','))
+        accepted_namespaces = args.namespaces
+
+    if args.namespaces_links:
+        accepted_namespaces_for_links = set(args.namespaces_links.split(','))
 
     FORMAT = '%(levelname)s: %(message)s'
     logging.basicConfig(format=FORMAT)
@@ -2778,10 +2793,11 @@ def main():
             if os.path.exists(args.templates):
                 with open(args.templates) as file:
                     load_templates(file)
-
         file = fileinput.FileInput(input_file, openhook=fileinput.hook_compressed)
         for page_data in pages_from(file):
             id, title, ns, page = page_data
+            if int(ns) not in accepted_namespaces:
+                continue
             Extractor(id, title, page).extract(sys.stdout)
         file.close()
         return
