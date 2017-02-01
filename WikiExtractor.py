@@ -423,7 +423,7 @@ class Extractor(object):
     expand_templates = True
 
 
-    def __init__(self, id, title, lines):
+    def __init__(self, id, title, timestamp, lines):
         """
         :param id: id of page.
         :param title: tutle of page.
@@ -431,6 +431,7 @@ class Extractor(object):
         """
         self.id = id
         self.title = title
+        self.timestamp = timestamp
         self.text = ''.join(lines)
         self.magicWords = MagicWords()
         self.frame = []
@@ -445,7 +446,7 @@ class Extractor(object):
         """
         logging.debug("%s\t%s", self.id, self.title)
         url = get_url(self.id)
-        header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
+        header = '<doc id="%s" timestamp="%s" url="%s" title="%s">\n' % (self.id, self.timestamp, url, self.title)
         # Separate header from text with a newline.
         # header += self.title + '\n\n'
         header = header.encode('utf-8')
@@ -2374,6 +2375,7 @@ def pages_from(input):
     page = []
     id = None
     ns = '0'
+    timestamp = None
     last_id = None
     inText = False
     redirect = False
@@ -2396,6 +2398,8 @@ def pages_from(input):
             title = m.group(3)
         elif tag == 'ns':
             ns = m.group(3)
+        elif tag == 'timestamp':
+            timestamp = m.group(3)
         elif tag == 'redirect':
             redirect = True
         elif tag == 'text':
@@ -2412,7 +2416,7 @@ def pages_from(input):
             page.append(line)
         elif tag == '/page':
             if id != last_id and not redirect:
-                yield (id, title, ns, page)
+                yield (id, title, ns, timestamp, page)
                 last_id = id
                 ns = '0'
             id = None
@@ -2526,7 +2530,7 @@ def process_dump(input_file, template_file, output_path, individual_article_outp
     # Mapper process
     page_num = 0
     for page_data in pages_from(input):
-        id, title, ns, page = page_data
+        id, title, ns, timestamp, page = page_data
         # Ignore the page if the namespace is not included in Accepted Namespace
         if int(ns) not in accepted_namespaces:
             page_num += 1
@@ -2542,7 +2546,7 @@ def process_dump(input_file, template_file, output_path, individual_article_outp
                     delay += 10
             if delay:
                 logging.info('Delay %ds', delay)
-            job = (id, title, page, page_num)
+            job = (id, title, timestamp, page, page_num)
             jobs_queue.put(job) # goes to any available extract_process
             page_num += 1
         page = None             # free memory
@@ -2581,12 +2585,12 @@ def extract_process(i, jobs_queue, output_queue):
     while True:
         job = jobs_queue.get()  # job is (id, title, page, page_num)
         if job:
-            id, title, page, page_num = job
+            id, title, timestamp, page, page_num = job
             # hack - to output each article in a separate file with name - page_id.html
             page_num = id
 
             try:
-                e = Extractor(*job[:3]) # (id, title, page)
+                e = Extractor(*job[:4]) # (id, title, page)
                 page = None              # free memory
                 e.extract(out)
                 text = out.getvalue()
@@ -2797,10 +2801,10 @@ def main():
                     load_templates(file)
         file = fileinput.FileInput(input_file, openhook=fileinput.hook_compressed)
         for page_data in pages_from(file):
-            id, title, ns, page = page_data
+            id, title, ns, timestamp, page = page_data
             if int(ns) not in accepted_namespaces:
                 continue
-            Extractor(id, title, page).extract(sys.stdout)
+            Extractor(id, title, timestamp, page).extract(sys.stdout)
         file.close()
         return
 
