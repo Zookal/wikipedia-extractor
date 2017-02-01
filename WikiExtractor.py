@@ -165,7 +165,7 @@ selfClosingTags = ('br', 'hr', 'nobr', 'ref', 'references', 'nowiki')
 ignoredTags = (
     'abbr', 'b', 'big', 'blockquote', 'center', 'cite', 'em',
     'font', 'h1', 'h2', 'h3', 'h4', 'hiero', 'i', 'kbd', 'nowiki',
-    'p', 'plaintext', 's', 'span', 'strike', 'strong',
+    'br', 'plaintext', 's', 'span', 'strike', 'strong',
     'tt', 'u', 'var'
 )
 
@@ -447,7 +447,7 @@ class Extractor(object):
         url = get_url(self.id)
         header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
         # Separate header from text with a newline.
-        header += self.title + '\n\n'
+        # header += self.title + '\n\n'
         header = header.encode('utf-8')
         self.magicWords['pagename'] = self.title
         self.magicWords['fullpagename'] = self.title
