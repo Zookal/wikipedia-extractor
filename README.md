@@ -126,6 +126,11 @@ issue:
     > find extracted -name '*bz2' -exec bunzip2 -c {} \; > text.xml
     > rm -rf extracted
 
+**Another Example to get HTML output split into individual files**  
+The following command will extract all the articles with namespace 0 into individual html files in the given output directory
+
+    >  bzcat ~/Downloads/enwiki-20170101-pages-articles-multistream.xml.bz2 | python WikiExtractor.py -ns 0 -i --html -o ~/working/wikipedia-extractor/extracted_with_ns0  -
+
 Related Work
 ------------
 
